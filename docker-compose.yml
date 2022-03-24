@@ -1,0 +1,74 @@
+version: "3"
+
+volumes:
+  mysql: {}
+
+services:
+  mysql:
+    image: mariadb:10.4-focal
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=secret
+      - MYSQL_DATABASE=tango
+      - MYSQL_USER=tango
+      - MYSQL_PASSWORD=tango
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d
+      - mysql:/var/lib/mysql
+    restart: unless-stopped
+
+  databaseds:
+    build: ds
+    container_name: databaseds
+    depends_on:
+      - mysql
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=tango
+      - MYSQL_USER=tango
+      - MYSQL_PASSWORD=tango
+      - TANGO_HOST=databaseds:10000
+    ports:
+      - "10000:10000"
+    command:
+      - /bin/bash
+      - -ec
+      - |
+        wait-for-it $${MYSQL_HOST}:$${MYSQL_PORT} -t 30 -s --  /usr/lib/tango/DataBaseds "2" -ORBendPoint giop:tcp::10000
+    restart: unless-stopped
+
+  tangotest:
+    build: ds
+    container_name: test
+    depends_on:
+      - databaseds
+    environment:
+      - TANGO_HOST=databaseds:10000
+    command:
+      - /bin/bash
+      - -ec
+      - |
+        wait-for-it $${TANGO_HOST} -t 30 -s --  /usr/lib/tango/TangoTest test
+    restart: unless-stopped
+
+  scadalts:
+    build: scada_lts
+    container_name: scada_lts
+    ports: 
+      - "8080:8080"
+    depends_on:
+      - mysql
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=scadalts
+      - MYSQL_USER=scada
+      - MYSQL_PASSWORD=scada
+    command:
+      - /bin/bash
+      - -ec
+      - |
+        wait-for-it $${MYSQL_HOST}:$${MYSQL_PORT} -t 30 -s -- catalina.sh run
+    restart: unless-stopped
+
